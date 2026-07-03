@@ -21,8 +21,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -619,7 +621,7 @@ fun PasswordDialog(state: TacticalState) {
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier
           .fillMaxWidth()
-          .maxHeight(350.dp)
+          .heightIn(max = 350.dp)
           .padding(horizontal = 8.dp)
       ) {
         Column(
@@ -774,7 +776,7 @@ fun SedesDialog(state: TacticalState) {
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier
           .fillMaxWidth()
-          .maxHeight(450.dp)
+          .heightIn(max = 450.dp)
       ) {
         Column(
           modifier = Modifier
@@ -1077,7 +1079,7 @@ fun BottomNavWidget(state: TacticalState) {
         horizontalArrangement = Arrangement.SpaceEvenly
       ) {
         BottomNavItem(
-          icon = Icons.Default.Crosshairs,
+          icon = Icons.Default.MyLocation,
           label = "Control",
           isSelected = state.currentTab == Tab.DASHBOARD,
           modifier = Modifier.testTag("tab_dashboard")
@@ -1282,7 +1284,7 @@ fun QuickActionsDialog(state: TacticalState) {
         colors = CardDefaults.cardColors(containerColor = CardBg),
         border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.4f)),
         shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().maxHeight(500.dp)
+        modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)
       ) {
         Column(
           modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -1605,7 +1607,7 @@ fun OficialFormContent(state: TacticalState) {
             }
             EvidenceButton(
               title = "Placa Foto",
-              icon = Icons.Default.Crosshairs,
+              icon = Icons.Default.MyLocation,
               modifier = Modifier.weight(1f).testTag("photo_plate_button")
             ) {
               state.triggerNotification("CAPTURA COMPLETA", "Matrícula indexada con OCR perimetral.", NotificationType.SUCCESS)
@@ -1679,7 +1681,7 @@ fun CustomTextField(
 ) {
   Column(modifier = modifier) {
     Text(
-      text = label.toUpperCase(),
+      text = label.uppercase(),
       color = MutedText,
       fontSize = 8.sp,
       fontWeight = FontWeight.Bold,
@@ -2113,7 +2115,7 @@ fun IntelContent(state: TacticalState) {
         verticalAlignment = Alignment.CenterVertically
       ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          Icon(imageVector = Icons.Default.Crosshairs, contentDescription = null, tint = NeonCyan)
+          Icon(imageVector = Icons.Default.MyLocation, contentDescription = null, tint = NeonCyan)
           Text(
             text = "MONITOR GPS DE COMPAÑEROS",
             color = NeonCyan,
