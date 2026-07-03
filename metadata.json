@@ -1,0 +1,6 @@
+{
+  "name": "Sentinel Tactical Core",
+  "description": "Tactical Core control system, driver ingress validation, and telemetry dashboard for Syntropy Lab.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
