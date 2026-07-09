@@ -141,11 +141,8 @@ class TacticalState {
   var currentTab by mutableStateOf(Tab.DASHBOARD)
   var activeRole by mutableStateOf<Role?>(null)
   var activeSede by mutableStateOf("")
-  var selectedRolePending by mutableStateOf<Role?>(null)
 
   // Auth Dialog state
-  var isAuthModalVisible by mutableStateOf(false)
-  var pinInput by mutableStateOf("")
   var isSedeModalVisible by mutableStateOf(false)
 
   // Form states - Humanos
@@ -493,9 +490,10 @@ fun OperatorLoginScreen(state: TacticalState) {
             borderColor = NeonCyan.copy(alpha = 0.3f),
             modifier = Modifier.weight(1f).testTag("role_oficial_button")
           ) {
-            state.selectedRolePending = Role.OFICIAL
-            state.pinInput = ""
-            state.isAuthModalVisible = true
+            state.activeRole = Role.OFICIAL
+            state.currentScreen = Screen.MAIN
+            state.addConsoleLog("SESIÓN INICIADA COMO OPERADOR: OFICIAL")
+            state.triggerNotification("CONEXIÓN ESTABLECIDA", "Operador validado y enlazado.", NotificationType.SUCCESS)
           }
 
           RoleGridButton(
@@ -505,9 +503,10 @@ fun OperatorLoginScreen(state: TacticalState) {
             borderColor = NeonAmber.copy(alpha = 0.3f),
             modifier = Modifier.weight(1f).testTag("role_supervisor_button")
           ) {
-            state.selectedRolePending = Role.SUPERVISOR
-            state.pinInput = ""
-            state.isAuthModalVisible = true
+            state.activeRole = Role.SUPERVISOR
+            state.currentScreen = Screen.MAIN
+            state.addConsoleLog("SESIÓN INICIADA COMO OPERADOR: SUPERVISOR")
+            state.triggerNotification("CONEXIÓN ESTABLECIDA", "Operador validado y enlazado.", NotificationType.SUCCESS)
           }
         }
 
@@ -522,9 +521,10 @@ fun OperatorLoginScreen(state: TacticalState) {
             borderColor = PurplePill.copy(alpha = 0.3f),
             modifier = Modifier.weight(1f).testTag("role_coordinador_button")
           ) {
-            state.selectedRolePending = Role.COORDINADOR
-            state.pinInput = ""
-            state.isAuthModalVisible = true
+            state.activeRole = Role.COORDINADOR
+            state.currentScreen = Screen.MAIN
+            state.addConsoleLog("SESIÓN INICIADA COMO OPERADOR: COORDINADOR")
+            state.triggerNotification("CONEXIÓN ESTABLECIDA", "Operador validado y enlazado.", NotificationType.SUCCESS)
           }
 
           RoleGridButton(
@@ -534,17 +534,11 @@ fun OperatorLoginScreen(state: TacticalState) {
             borderColor = NeonGreen.copy(alpha = 0.3f),
             modifier = Modifier.weight(1f).testTag("role_sep_button")
           ) {
-            state.selectedRolePending = Role.SEP
-            state.pinInput = ""
-            state.isAuthModalVisible = true
+            state.activeRole = Role.SEP
+            state.isSedeModalVisible = true
           }
         }
       }
-    }
-
-    // PASSWORD MODAL INLINE
-    if (state.isAuthModalVisible) {
-      PasswordDialog(state)
     }
 
     // SEDES MODAL DIALOG (Exclusivo SEP Central)
@@ -601,150 +595,6 @@ fun RoleGridButton(
   }
 }
 
-// Password verification dialog
-@Composable
-fun PasswordDialog(state: TacticalState) {
-  Dialog(
-    onDismissRequest = { state.isAuthModalVisible = false },
-    properties = DialogProperties(usePlatformDefaultWidth = false)
-  ) {
-    Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .background(Color.Black.copy(alpha = 0.85f))
-        .padding(32.dp),
-      contentAlignment = Alignment.Center
-    ) {
-      Card(
-        colors = CardDefaults.cardColors(containerColor = CardBg),
-        border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.5f)),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier
-          .fillMaxWidth()
-          .heightIn(max = 350.dp)
-          .padding(horizontal = 8.dp)
-      ) {
-        Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(20.dp),
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-              text = "LLAVE PARA ${state.selectedRolePending?.name ?: ""}",
-              color = NeonCyan,
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-              letterSpacing = 1.sp
-            )
-            Text(
-              text = "INTRODUZCA CREDENCIAL AUTORIZADA",
-              color = MutedText,
-              fontSize = 8.sp,
-              fontFamily = FontFamily.Monospace,
-              letterSpacing = 0.5.sp,
-              modifier = Modifier.padding(top = 4.dp)
-            )
-          }
-
-          // Digit Key Input Field
-          TextField(
-            value = state.pinInput,
-            onValueChange = { state.pinInput = it },
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            placeholder = {
-              Text(
-                "••••",
-                color = MutedText.copy(alpha = 0.5f),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-              )
-            },
-            colors = TextFieldDefaults.colors(
-              focusedContainerColor = Color.Black,
-              unfocusedContainerColor = Color.Black,
-              focusedTextColor = Color.White,
-              unfocusedTextColor = Color.White,
-              focusedIndicatorColor = NeonCyan,
-              unfocusedIndicatorColor = NeonCyan.copy(alpha = 0.4f)
-            ),
-            textStyle = TextStyle(
-              fontSize = 20.sp,
-              fontFamily = FontFamily.Monospace,
-              fontWeight = FontWeight.Bold,
-              textAlign = TextAlign.Center,
-              letterSpacing = 8.sp
-            ),
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .testTag("password_input")
-          )
-
-          // Actions
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-          ) {
-            Button(
-              onClick = { state.isAuthModalVisible = false },
-              colors = ButtonDefaults.buttonColors(containerColor = DarkGray, contentColor = LightSlate),
-              shape = RoundedCornerShape(8.dp),
-              modifier = Modifier
-                .weight(1f)
-                .height(44.dp)
-                .testTag("password_abort_button")
-            ) {
-              Text("ABORTAR", fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-
-            Button(
-              onClick = {
-                // Pin Validation Rules
-                val verified = when (state.selectedRolePending) {
-                  Role.OFICIAL -> {
-                    val num = state.pinInput.toIntOrNull()
-                    num != null && num in 1..16
-                  }
-                  Role.SUPERVISOR -> state.pinInput == "003"
-                  Role.COORDINADOR -> state.pinInput == "002"
-                  Role.SEP -> state.pinInput == "777"
-                  else -> false
-                }
-
-                if (verified) {
-                  state.isAuthModalVisible = false
-                  state.activeRole = state.selectedRolePending
-                  if (state.activeRole == Role.SEP) {
-                    state.isSedeModalVisible = true
-                  } else {
-                    state.currentScreen = Screen.MAIN
-                    state.addConsoleLog("SESIÓN INICIADA COMO OPERADOR: ${state.activeRole?.name}")
-                    state.triggerNotification("CONEXIÓN ESTABLECIDA", "Operador validado y enlazado.", NotificationType.SUCCESS)
-                  }
-                } else {
-                  state.triggerNotification("ERROR DE ACCESO", "Llave criptográfica incorrecta.", NotificationType.DANGER)
-                }
-              },
-              colors = ButtonDefaults.buttonColors(containerColor = NeonCyan, contentColor = BGDeep),
-              shape = RoundedCornerShape(8.dp),
-              modifier = Modifier
-                .weight(1f)
-                .height(44.dp)
-                .testTag("password_verify_button")
-            ) {
-              Text("VERIFICAR", fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-          }
-        }
-      }
-    }
-  }
-}
 
 // Sede Selector dialog for SEP Central
 @Composable
