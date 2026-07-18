@@ -54,6 +54,7 @@ import java.util.Locale
 // Structure Definitions matching database states
 enum class Screen {
   TERMS,
+  REGISTER,
   LOGIN,
   MAIN
 }
@@ -62,7 +63,8 @@ enum class Tab {
   DASHBOARD,
   INTEL,
   SENSORS,
-  LOGS
+  LOGS,
+  AI_ASSISTANT
 }
 
 enum class Role {
@@ -141,6 +143,70 @@ class TacticalState {
   var currentTab by mutableStateOf(Tab.DASHBOARD)
   var activeRole by mutableStateOf<Role?>(null)
   var activeSede by mutableStateOf("")
+
+  // Operator database list
+  var registeredOperators = mutableStateListOf<com.example.data.Operator>()
+  var isLoadingOperators by mutableStateOf(false)
+  val dbScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+  // AI Asistente
+  var aiQuery by mutableStateOf("")
+  var aiResponse by mutableStateOf("")
+  var isAiLoading by mutableStateOf(false)
+
+  fun loadAndSeedOperators(context: android.content.Context) {
+    isLoadingOperators = true
+    dbScope.launch {
+      val db = com.example.data.AppDatabase.getDatabase(context)
+      var list = withContext(Dispatchers.IO) { db.operatorDao().allOperators }
+      if (list.isEmpty()) {
+        // Seed default demo operators
+        val seeds = listOf(
+          com.example.data.Operator("Oficial Juan Pérez", "OFICIAL", System.currentTimeMillis() - 300000),
+          com.example.data.Operator("Supervisor J. Castro", "SUPERVISOR", System.currentTimeMillis() - 200000),
+          com.example.data.Operator("Coordinador L. Gómez", "COORDINADOR", System.currentTimeMillis() - 100000),
+          com.example.data.Operator("SEP Central Aragua", "SEP", System.currentTimeMillis())
+        )
+        withContext(Dispatchers.IO) {
+          for (op in seeds) {
+            db.operatorDao().insert(op)
+          }
+          list = db.operatorDao().allOperators
+        }
+        addConsoleLog("SISTEMA AUTOPLANIFICADO: Cuentas demo preconfiguradas sembradas.")
+      }
+      registeredOperators.clear()
+      registeredOperators.addAll(list)
+      isLoadingOperators = false
+    }
+  }
+
+  fun registerNewOperator(context: android.content.Context, username: String, role: String, onComplete: () -> Unit) {
+    dbScope.launch {
+      val db = com.example.data.AppDatabase.getDatabase(context)
+      val newOp = com.example.data.Operator(username, role, System.currentTimeMillis())
+      withContext(Dispatchers.IO) {
+        db.operatorDao().insert(newOp)
+      }
+      addConsoleLog("NUEVO REGISTRO: Operador '$username' ($role) registrado con éxito en la base de datos.")
+      loadAndSeedOperators(context)
+      onComplete()
+    }
+  }
+
+  fun executeAiDiagnostics() {
+    if (aiQuery.trim().isEmpty()) return
+    isAiLoading = true
+    aiResponse = ""
+    addConsoleLog("SISTEMA DE IA: Enviando consulta de diagnóstico al Asistente Técnico...")
+    dbScope.launch {
+      val logs = consoleLogs.take(15)
+      val response = com.example.data.AIService.getDiagnostics(logs, aiQuery)
+      aiResponse = response
+      isAiLoading = false
+      addConsoleLog("SISTEMA DE IA: Respuesta recibida del Asistente Técnico.")
+    }
+  }
 
   // Auth Dialog state
   var isSedeModalVisible by mutableStateOf(false)
@@ -222,6 +288,10 @@ class TacticalState {
 @Composable
 fun TacticalCoreApp() {
   val state = rememberTacticalState()
+  val context = LocalContext.current
+  LaunchedEffect(Unit) {
+    state.loadAndSeedOperators(context)
+  }
 
   Box(
     modifier = Modifier
@@ -261,6 +331,7 @@ fun TacticalCoreApp() {
   ) {
     when (state.currentScreen) {
       Screen.TERMS -> TermsAndPrivacyScreen(state)
+      Screen.REGISTER -> OperatorRegisterScreen(state)
       Screen.LOGIN -> OperatorLoginScreen(state)
       Screen.MAIN -> MainDashboardScreen(state)
     }
@@ -424,6 +495,7 @@ fun TermsAndPrivacyScreen(state: TacticalState) {
 // SCREEN 2: OPERATOR LOGIN
 @Composable
 fun OperatorLoginScreen(state: TacticalState) {
+  val context = LocalContext.current
   Box(
     modifier = Modifier
       .fillMaxSize()
@@ -432,14 +504,15 @@ fun OperatorLoginScreen(state: TacticalState) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .align(Alignment.Center),
+        .align(Alignment.Center)
+        .verticalScroll(rememberScrollState()),
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
       // Glow Circular Lock Badge
       Box(
         modifier = Modifier
-          .size(90.dp)
+          .size(80.dp)
           .border(2.dp, NeonCyan.copy(alpha = 0.5f), CircleShape)
           .background(CardBg, CircleShape),
         contentAlignment = Alignment.Center
@@ -448,13 +521,240 @@ fun OperatorLoginScreen(state: TacticalState) {
           imageVector = Icons.Default.LockOpen,
           contentDescription = "Lock Logo",
           tint = NeonCyan,
-          modifier = Modifier.size(44.dp)
+          modifier = Modifier.size(38.dp)
         )
       }
 
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-          text = "ACCESO DE OPERADOR",
+          text = "ACCESO DE OPERADOR TÁCTICO",
+          color = Color.White,
+          fontFamily = FontFamily.Monospace,
+          fontWeight = FontWeight.Bold,
+          fontSize = 15.sp,
+          letterSpacing = 1.sp
+        )
+        Text(
+          text = "SELECCIONE UNA CUENTA AUTORIZADA DE LA BASE DE DATOS",
+          color = MutedText,
+          fontFamily = FontFamily.Monospace,
+          fontWeight = FontWeight.Normal,
+          fontSize = 8.sp,
+          letterSpacing = 0.5.sp,
+          textAlign = TextAlign.Center,
+          modifier = Modifier.padding(start = 12.dp, top = 4.dp, end = 12.dp, bottom = 0.dp)
+        )
+      }
+
+      // Dropdown / List of operators from Room Database
+      Card(
+        colors = CardDefaults.cardColors(containerColor = CardBg),
+        border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.3f)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+      ) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(16.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+          Text(
+            text = "OPERADORES REGISTRADOS (DEMO LOCAL)",
+            color = NeonCyan,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 10.sp,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(bottom = 4.dp)
+          )
+
+          if (state.isLoadingOperators) {
+            Box(
+              modifier = Modifier.fillMaxWidth().height(100.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              CircularProgressIndicator(color = NeonCyan, modifier = Modifier.size(24.dp))
+            }
+          } else if (state.registeredOperators.isEmpty()) {
+            Text(
+              text = "No hay operadores en la base de datos.",
+              color = MutedText,
+              fontSize = 11.sp,
+              fontFamily = FontFamily.Monospace
+            )
+          } else {
+            state.registeredOperators.forEach { op ->
+              val resolvedRole = when (op.role) {
+                "SUPERVISOR" -> Role.SUPERVISOR
+                "COORDINADOR" -> Role.COORDINADOR
+                "SEP" -> Role.SEP
+                else -> Role.OFICIAL
+              }
+
+              val roleColor = when (resolvedRole) {
+                Role.OFICIAL -> NeonCyan
+                Role.SUPERVISOR -> NeonAmber
+                Role.COORDINADOR -> PurplePill
+                Role.SEP -> NeonGreen
+              }
+
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                  .border(0.5.dp, roleColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                  .clickable {
+                    state.activeRole = resolvedRole
+                    if (resolvedRole == Role.SEP) {
+                      state.isSedeModalVisible = true
+                    } else {
+                      state.currentScreen = Screen.MAIN
+                      state.addConsoleLog("SESIÓN INICIADA COMO OPERADOR: ${op.username} (${op.role})")
+                      state.triggerNotification(
+                        "CONEXIÓN ESTABLECIDA",
+                        "Operador '${op.username}' validado y enlazado.",
+                        NotificationType.SUCCESS
+                      )
+                    }
+                  }
+                  .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                  Icon(
+                    imageVector = when (resolvedRole) {
+                      Role.OFICIAL -> Icons.Default.Person
+                      Role.SUPERVISOR -> Icons.Default.Visibility
+                      Role.COORDINADOR -> Icons.Default.Shield
+                      Role.SEP -> Icons.Default.Public
+                    },
+                    contentDescription = op.role,
+                    tint = roleColor,
+                    modifier = Modifier.size(20.dp)
+                  )
+                  Column {
+                    Text(
+                      text = op.username,
+                      color = Color.White,
+                      fontSize = 12.sp,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = FontFamily.SansSerif
+                    )
+                    Text(
+                      text = "Rol: ${op.role}",
+                      color = roleColor,
+                      fontSize = 9.sp,
+                      fontFamily = FontFamily.Monospace
+                    )
+                  }
+                }
+
+                // Quick Login indicator
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                  Text(
+                    text = "ACCEDER",
+                    color = roleColor,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                  )
+                  Icon(
+                    imageVector = Icons.Default.ArrowForward,
+                    contentDescription = "Acceder",
+                    tint = roleColor,
+                    modifier = Modifier.size(12.dp)
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Button to navigate to Register Screen
+      Button(
+        onClick = { state.currentScreen = Screen.REGISTER },
+        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan.copy(alpha = 0.15f), contentColor = NeonCyan),
+        border = BorderStroke(1.dp, NeonCyan),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(48.dp)
+          .testTag("go_to_register_button")
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Default.Add,
+            contentDescription = "Registrar",
+            modifier = Modifier.size(18.dp)
+          )
+          Text(
+            text = "REGISTRAR NUEVA CUENTA DE OPERADOR",
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 10.sp
+          )
+        }
+      }
+
+      Spacer(modifier = Modifier.height(12.dp))
+    }
+
+    // SEDES MODAL DIALOG (Exclusivo SEP Central)
+    if (state.isSedeModalVisible) {
+      SedesDialog(state)
+    }
+  }
+}
+
+// SCREEN 1.5: OPERATOR REGISTER
+@Composable
+fun OperatorRegisterScreen(state: TacticalState) {
+  val context = LocalContext.current
+  var newUsername by remember { mutableStateOf("") }
+  var selectedRole by remember { mutableStateOf(Role.OFICIAL) }
+
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .padding(24.dp)
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .align(Alignment.Center)
+        .verticalScroll(rememberScrollState()),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+      // Icon
+      Box(
+        modifier = Modifier
+          .size(80.dp)
+          .border(2.dp, NeonCyan.copy(alpha = 0.5f), CircleShape)
+          .background(CardBg, CircleShape),
+        contentAlignment = Alignment.Center
+      ) {
+        Icon(
+          imageVector = Icons.Default.GroupAdd,
+          contentDescription = "Add User Logo",
+          tint = NeonCyan,
+          modifier = Modifier.size(38.dp)
+        )
+      }
+
+      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+          text = "REGISTRO DE OPERADOR",
           color = Color.White,
           fontFamily = FontFamily.Monospace,
           fontWeight = FontWeight.Bold,
@@ -462,88 +762,142 @@ fun OperatorLoginScreen(state: TacticalState) {
           letterSpacing = 1.sp
         )
         Text(
-          text = "AUTENTICACIÓN DE CRIPTO-LLAVE LOCAL",
+          text = "CREE UNA NUEVA CREDENCIAL EN LA BASE DE DATOS LOCAL",
           color = MutedText,
           fontFamily = FontFamily.Monospace,
           fontWeight = FontWeight.Normal,
           fontSize = 8.sp,
-          letterSpacing = 1.5.sp,
+          letterSpacing = 0.5.sp,
           modifier = Modifier.padding(top = 4.dp)
         )
       }
 
-      Spacer(modifier = Modifier.height(8.dp))
+      // Input field
+      OutlinedTextField(
+        value = newUsername,
+        onValueChange = { newUsername = it },
+        label = { Text("Nombre del Operador", color = MutedText, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+        colors = OutlinedTextFieldDefaults.colors(
+          focusedBorderColor = NeonCyan,
+          unfocusedBorderColor = NeonCyan.copy(alpha = 0.4f),
+          focusedTextColor = Color.White,
+          unfocusedTextColor = Color.White,
+          focusedLabelColor = NeonCyan,
+          cursorColor = NeonCyan
+        ),
+        textStyle = TextStyle(fontSize = 14.sp, fontFamily = FontFamily.SansSerif),
+        shape = RoundedCornerShape(10.dp),
+        singleLine = true,
+        modifier = Modifier
+          .fillMaxWidth()
+          .testTag("register_username_input")
+      )
 
-      // 4 Role Access Selector Grid
+      // Role select row
       Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
       ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-          RoleGridButton(
-            role = Role.OFICIAL,
-            title = "OFICIAL",
-            icon = Icons.Default.Person,
-            borderColor = NeonCyan.copy(alpha = 0.3f),
-            modifier = Modifier.weight(1f).testTag("role_oficial_button")
-          ) {
-            state.activeRole = Role.OFICIAL
-            state.currentScreen = Screen.MAIN
-            state.addConsoleLog("SESIÓN INICIADA COMO OPERADOR: OFICIAL")
-            state.triggerNotification("CONEXIÓN ESTABLECIDA", "Operador validado y enlazado.", NotificationType.SUCCESS)
-          }
-
-          RoleGridButton(
-            role = Role.SUPERVISOR,
-            title = "SUPERVISOR",
-            icon = Icons.Default.Visibility,
-            borderColor = NeonAmber.copy(alpha = 0.3f),
-            modifier = Modifier.weight(1f).testTag("role_supervisor_button")
-          ) {
-            state.activeRole = Role.SUPERVISOR
-            state.currentScreen = Screen.MAIN
-            state.addConsoleLog("SESIÓN INICIADA COMO OPERADOR: SUPERVISOR")
-            state.triggerNotification("CONEXIÓN ESTABLECIDA", "Operador validado y enlazado.", NotificationType.SUCCESS)
-          }
-        }
+        Text(
+          text = "SELECCIONE EL ROL ASIGNADO",
+          color = NeonCyan,
+          fontSize = 10.sp,
+          fontFamily = FontFamily.Monospace,
+          fontWeight = FontWeight.Bold,
+          letterSpacing = 0.5.sp
+        )
 
         Row(
           modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp)
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-          RoleGridButton(
-            role = Role.COORDINADOR,
-            title = "COORDINADOR",
-            icon = Icons.Default.Shield,
-            borderColor = PurplePill.copy(alpha = 0.3f),
-            modifier = Modifier.weight(1f).testTag("role_coordinador_button")
-          ) {
-            state.activeRole = Role.COORDINADOR
-            state.currentScreen = Screen.MAIN
-            state.addConsoleLog("SESIÓN INICIADA COMO OPERADOR: COORDINADOR")
-            state.triggerNotification("CONEXIÓN ESTABLECIDA", "Operador validado y enlazado.", NotificationType.SUCCESS)
-          }
+          listOf(Role.OFICIAL, Role.SUPERVISOR, Role.COORDINADOR, Role.SEP).forEach { r ->
+            val isSelected = selectedRole == r
+            val rColor = when (r) {
+              Role.OFICIAL -> NeonCyan
+              Role.SUPERVISOR -> NeonAmber
+              Role.COORDINADOR -> PurplePill
+              Role.SEP -> NeonGreen
+            }
 
-          RoleGridButton(
-            role = Role.SEP,
-            title = "SEP CENTRAL",
-            icon = Icons.Default.Public,
-            borderColor = NeonGreen.copy(alpha = 0.3f),
-            modifier = Modifier.weight(1f).testTag("role_sep_button")
-          ) {
-            state.activeRole = Role.SEP
-            state.isSedeModalVisible = true
+            Box(
+              modifier = Modifier
+                .weight(1f)
+                .height(44.dp)
+                .background(
+                  if (isSelected) rColor.copy(alpha = 0.15f) else CardBg,
+                  RoundedCornerShape(8.dp)
+                )
+                .border(
+                  width = if (isSelected) 2.dp else 1.dp,
+                  color = if (isSelected) rColor else rColor.copy(alpha = 0.25f),
+                  shape = RoundedCornerShape(8.dp)
+                )
+                .clickable { selectedRole = r }
+                .padding(4.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              Text(
+                text = when (r) {
+                  Role.OFICIAL -> "OFICIAL"
+                  Role.SUPERVISOR -> "SUP"
+                  Role.COORDINADOR -> "COORD"
+                  Role.SEP -> "SEP"
+                },
+                color = if (isSelected) Color.White else MutedText,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace
+              )
+            }
           }
         }
       }
-    }
 
-    // SEDES MODAL DIALOG (Exclusivo SEP Central)
-    if (state.isSedeModalVisible) {
-      SedesDialog(state)
+      Spacer(modifier = Modifier.height(8.dp))
+
+      // Action buttons
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+      ) {
+        Button(
+          onClick = { state.currentScreen = Screen.LOGIN },
+          colors = ButtonDefaults.buttonColors(containerColor = DarkGray, contentColor = LightSlate),
+          shape = RoundedCornerShape(10.dp),
+          modifier = Modifier
+            .weight(1f)
+            .height(48.dp)
+            .testTag("register_abort_button")
+        ) {
+          Text("CANCELAR", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Button(
+          onClick = {
+            if (newUsername.trim().isEmpty()) {
+              state.triggerNotification("REGISTRO FALLIDO", "El nombre de usuario no puede estar vacío.", NotificationType.DANGER)
+            } else {
+              state.registerNewOperator(context, newUsername.trim(), selectedRole.name) {
+                state.currentScreen = Screen.LOGIN
+                state.triggerNotification(
+                  "REGISTRO EXITOSO",
+                  "Nueva cuenta '$newUsername' creada en la base de datos.",
+                  NotificationType.SUCCESS
+                )
+              }
+            }
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = NeonCyan, contentColor = BGDeep),
+          shape = RoundedCornerShape(10.dp),
+          modifier = Modifier
+            .weight(1.2f)
+            .height(48.dp)
+            .testTag("register_save_button")
+        ) {
+          Text("REGISTRAR", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+      }
     }
   }
 }
@@ -733,6 +1087,7 @@ fun MainDashboardScreen(state: TacticalState) {
           Tab.INTEL -> IntelContent(state)
           Tab.SENSORS -> SensorsContent(state)
           Tab.LOGS -> LogsContent(state)
+          Tab.AI_ASSISTANT -> AiAssistantContent(state)
         }
       }
 
@@ -966,7 +1321,7 @@ fun BottomNavWidget(state: TacticalState) {
         )
       }
 
-      // Tab Sensors & Tab Logs
+      // Tab Sensors, Tab Logs & Tab AI Assistant
       Row(
         modifier = Modifier.weight(1f),
         horizontalArrangement = Arrangement.SpaceEvenly
@@ -982,11 +1337,20 @@ fun BottomNavWidget(state: TacticalState) {
 
         BottomNavItem(
           icon = Icons.Default.List,
-          label = "Bitácora",
+          label = "Logs",
           isSelected = state.currentTab == Tab.LOGS,
           modifier = Modifier.testTag("tab_logs")
         ) {
           state.currentTab = Tab.LOGS
+        }
+
+        BottomNavItem(
+          icon = Icons.Default.Psychology,
+          label = "Asistente IA",
+          isSelected = state.currentTab == Tab.AI_ASSISTANT,
+          modifier = Modifier.testTag("tab_ai_assistant")
+        ) {
+          state.currentTab = Tab.AI_ASSISTANT
         }
       }
     }
@@ -2315,6 +2679,212 @@ fun LogsContent(state: TacticalState) {
               .padding(horizontal = 6.dp, vertical = 2.dp)
           ) {
             Text(text = "ONLINE", color = NeonGreen, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+          }
+        }
+      }
+    }
+  }
+}
+
+// TAB 5: ADVANCED AI ASSISTANT & FUTURE ERROR PREDICTION SYSTEM
+@Composable
+fun AiAssistantContent(state: TacticalState) {
+  Card(
+    colors = CardDefaults.cardColors(containerColor = CardBg),
+    border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.3f)),
+    shape = RoundedCornerShape(12.dp),
+    modifier = Modifier.fillMaxWidth()
+  ) {
+    Column(
+      modifier = Modifier.padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          Icon(imageVector = Icons.Default.Psychology, contentDescription = null, tint = NeonCyan)
+          Text(
+            text = "ASISTENTE COGNITIVO SENTINEL IA",
+            color = NeonCyan,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+        }
+        Box(
+          modifier = Modifier
+            .background(NeonCyan.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+          Text(text = "INTEGRACIÓN API", color = NeonCyan, fontSize = 7.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        }
+      }
+
+      Text(
+        text = "Sincronizado vía API con Gemini 3.5. Diagnóstica fallas en tiempo real, predice futuros errores en base de datos/redes, y calcula recomendaciones tácticas automatizadas para el operador.",
+        color = LightSlate,
+        fontSize = 10.sp,
+        lineHeight = 14.sp
+      )
+
+      // Suggested prompts (Quick demo)
+      Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+      ) {
+        Text(
+          text = "PREDICCIÓN DE FUTURAS FALLAS Y CONSULTAS RÁPIDAS",
+          color = MutedText,
+          fontSize = 8.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace
+        )
+
+        val prompts = listOf(
+          "¿Cuáles son los posibles errores de la base de datos o almacenamiento a futuro?",
+          "Predice fallas de transmisiones satelitales y cómo solucionarlas.",
+          "Generar reporte de mitigación de riesgos tácticos perimetrales."
+        )
+
+        prompts.forEach { pr ->
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+              .border(0.5.dp, NeonCyan.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+              .clickable {
+                state.aiQuery = pr
+              }
+              .padding(8.dp)
+          ) {
+            Row(
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(imageVector = Icons.Default.ArrowForward, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(10.dp))
+              Text(
+                text = pr,
+                color = Color.White,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.SansSerif
+              )
+            }
+          }
+        }
+      }
+
+      // Input field
+      OutlinedTextField(
+        value = state.aiQuery,
+        onValueChange = { state.aiQuery = it },
+        label = { Text("Consulta Técnica o Comando Táctico", color = MutedText, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+        colors = OutlinedTextFieldDefaults.colors(
+          focusedBorderColor = NeonCyan,
+          unfocusedBorderColor = NeonCyan.copy(alpha = 0.4f),
+          focusedTextColor = Color.White,
+          unfocusedTextColor = Color.White,
+          focusedLabelColor = NeonCyan,
+          cursorColor = NeonCyan
+        ),
+        textStyle = TextStyle(fontSize = 12.sp, fontFamily = FontFamily.SansSerif),
+        shape = RoundedCornerShape(10.dp),
+        singleLine = false,
+        maxLines = 3,
+        modifier = Modifier
+          .fillMaxWidth()
+          .testTag("ai_prompt_input")
+      )
+
+      // Submit Button
+      Button(
+        onClick = { state.executeAiDiagnostics() },
+        enabled = !state.isAiLoading && state.aiQuery.trim().isNotEmpty(),
+        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan, contentColor = BGDeep, disabledContainerColor = DarkGray, disabledContentColor = LightSlate),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(48.dp)
+          .testTag("run_ai_diagnostics_button")
+      ) {
+        if (state.isAiLoading) {
+          CircularProgressIndicator(color = BGDeep, modifier = Modifier.size(20.dp))
+        } else {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            Icon(imageVector = Icons.Default.Psychology, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("EJECUTAR DIAGNÓSTICO IA", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+          }
+        }
+      }
+
+      // Result Area
+      if (state.aiResponse.isNotEmpty() || state.isAiLoading) {
+        Card(
+          colors = CardDefaults.cardColors(containerColor = Color.Black),
+          border = BorderStroke(1.dp, NeonGreen.copy(alpha = 0.3f)),
+          shape = RoundedCornerShape(10.dp),
+          modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ) {
+          Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "INFORME COGNITIVO GENERADO",
+                color = NeonGreen,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace
+              )
+              Box(
+                modifier = Modifier
+                  .background(GreenPillBg, RoundedCornerShape(4.dp))
+                  .padding(horizontal = 6.dp, vertical = 2.dp)
+              ) {
+                Text(text = "ACTIVO", color = NeonGreen, fontSize = 7.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+              }
+            }
+
+            if (state.isAiLoading) {
+              Box(
+                modifier = Modifier.fillMaxWidth().height(120.dp),
+                contentAlignment = Alignment.Center
+              ) {
+                Column(
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  CircularProgressIndicator(color = NeonGreen, modifier = Modifier.size(24.dp))
+                  Text("Procesando telemetría y logs...", color = MutedText, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                }
+              }
+            } else {
+              // Scrollable Markdown text
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .heightIn(max = 300.dp)
+                  .verticalScroll(rememberScrollState())
+              ) {
+                Text(
+                  text = state.aiResponse,
+                  color = Color.White,
+                  fontSize = 11.sp,
+                  lineHeight = 15.sp,
+                  fontFamily = FontFamily.SansSerif
+                )
+              }
+            }
           }
         }
       }
