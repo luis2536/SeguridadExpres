@@ -28,5 +28,8 @@ jobs:
     - name: Build Debug APK
       run: ./gradlew assembleDebug --no-daemon
 
+    - name: Build Debug AAB
+      run: ./gradlew bundleDebug --no-daemon
+
     - name: Run Local JVM Unit Tests
       run: ./gradlew testDebugUnitTest --no-daemon

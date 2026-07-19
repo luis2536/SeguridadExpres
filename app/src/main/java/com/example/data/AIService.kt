@@ -11,8 +11,17 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+import okhttp3.CertificatePinner
+
 object AIService {
+    private val certificatePinner = CertificatePinner.Builder()
+        .add("generativelanguage.googleapis.com", "sha256/wexkXgR+pYt3E6gL09kO3dZ2Wj32w1hW2I5rV5P0aU8=")
+        .add("generativelanguage.googleapis.com", "sha256/8Rw90Ej3Ttt8RRkrg+WYDS9n7yX3zPeO2lzSR7pXwG8=")
+        .add("generativelanguage.googleapis.com", "sha256/Ko8tivDrEjiY90yGasP6ZpBU4jwXvHqVvQI0GS3GNnM=")
+        .build()
+
     private val client = OkHttpClient.Builder()
+        .certificatePinner(certificatePinner)
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
